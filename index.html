@@ -3,210 +3,47 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>クリックターゲットゲーム</title>
-  <style>
-    body { font-family: system-ui, sans-serif; margin: 0; background:#0b1020; color:#e7eaf3; }
-    header { padding: 16px; display:flex; gap:16px; align-items:center; justify-content:space-between; }
-    .panel { display:flex; gap:12px; flex-wrap:wrap; }
-    .box { background:#151b33; padding:10px 12px; border-radius:12px; }
-    #game {
-      position: relative;
-      width: min(92vw, 720px);
-      height: min(70vh, 520px);
-      margin: 0 auto 24px;
-      background: #0f1630;
-      border: 2px solid #24305a;
-      border-radius: 18px;
-      overflow: hidden;
-      box-shadow: 0 10px 30px rgba(0,0,0,.35);
-    }
-    #target {
-      position: absolute;
-      width: 56px;
-      height: 56px;
-      border-radius: 50%;
-      background: radial-gradient(circle at 30% 30%, #ffd36a, #ff6a3d);
-      border: 2px solid rgba(255,255,255,.35);
-      cursor: pointer;
-      display: none;
-      user-select: none;
-      transform: translateZ(0);
-    }
-    button {
-      background:#3a6df0; color:white; border:0; padding:10px 14px;
-      border-radius:12px; cursor:pointer; font-weight:600;
-    }
-    button:disabled { opacity:.5; cursor:not-allowed; }
-    .hint { opacity:.85; font-size: 13px; margin: 0 auto; width: min(92vw, 720px); }
-  </style>
+  <title>落ち物パズル（テトリス風）</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="game.js" defer></script>
 </head>
 <body>
   <header>
-    <div class="panel">
+    <div class="hud">
       <div class="box">スコア: <span id="score">0</span></div>
-      <div class="box">残り: <span id="time">10.0</span> 秒</div>
-      <div class="box">命中: <span id="hits">0</span></div>
-      <div class="box">ミス: <span id="miss">0</span></div>
+      <div class="box">レベル: <span id="level">1</span></div>
+      <div class="box">ライン: <span id="lines">0</span></div>
+      <div class="box">状態: <span id="state">待機</span></div>
     </div>
-    <div class="panel">
+    <div class="hud">
       <button id="startBtn">スタート</button>
-      <button id="resetBtn" disabled>リセット</button>
+      <button id="restartBtn">リスタート</button>
     </div>
   </header>
 
-  <div id="game">
-    <div id="target" aria-label="target"></div>
+  <main>
+    <canvas id="game" width="360" height="600" aria-label="game"></canvas>
+
+    <aside class="side">
+      <canvas id="next" width="160" height="160" aria-label="next"></canvas>
+      <div class="box hint">
+        操作（PC）<br>
+        ← →: 移動 / ↓: ソフトドロップ<br>
+        ↑: 回転 / Space: ハードドロップ<br>
+        P: 一時停止<br><br>
+        ※本家の完全再現ではなく「テトリスっぽい落ち物」です。
+      </div>
+    </aside>
+  </main>
+
+  <div class="controls">
+    <button id="btnLeft">←</button>
+    <button id="btnRotate">⟳</button>
+    <button id="btnRight">→</button>
+    <button id="btnDown">↓</button>
+    <button id="btnDrop">ドロップ</button>
+    <button id="btnPause">P</button>
+    <button class="wide" id="btnStart">スタート/再開</button>
   </div>
-
-  <div class="hint">
-    ルール：10秒間でターゲットをクリック。外側をクリックするとミス。ターゲットはランダム位置に出現します。
-  </div>
-
-  <script>
-    const game = document.getElementById("game");
-    const target = document.getElementById("target");
-    const scoreEl = document.getElementById("score");
-    const timeEl = document.getElementById("time");
-    const hitsEl = document.getElementById("hits");
-    const missEl = document.getElementById("miss");
-    const startBtn = document.getElementById("startBtn");
-    const resetBtn = document.getElementById("resetBtn");
-
-    let score = 0;
-    let hits = 0;
-    let miss = 0;
-
-    let running = false;
-    let endAt = 0;
-    let rafId = 0;
-    let popTimer = 0;
-
-    const GAME_SECONDS = 10;
-    const TARGET_SIZE = 56;
-
-    function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
-
-    function setUI() {
-      scoreEl.textContent = String(score);
-      hitsEl.textContent = String(hits);
-      missEl.textContent = String(miss);
-    }
-
-    function setTime(seconds) {
-      timeEl.textContent = seconds.toFixed(1);
-    }
-
-    function randomPosition() {
-      const rect = game.getBoundingClientRect();
-      const maxX = rect.width - TARGET_SIZE;
-      const maxY = rect.height - TARGET_SIZE;
-
-      const x = Math.random() * maxX;
-      const y = Math.random() * maxY;
-
-      target.style.left = `${x}px`;
-      target.style.top = `${y}px`;
-    }
-
-    function showTarget() {
-      randomPosition();
-      target.style.display = "block";
-    }
-
-    function hideTarget() {
-      target.style.display = "none";
-    }
-
-    function schedulePop() {
-      // 0.35〜0.9秒の間隔で出現位置が変わる（テンポ調整）
-      const delay = 350 + Math.random() * 550;
-      clearTimeout(popTimer);
-      popTimer = setTimeout(() => {
-        if (!running) return;
-        showTarget();
-        schedulePop();
-      }, delay);
-    }
-
-    function loop() {
-      if (!running) return;
-
-      const now = performance.now();
-      const remaining = (endAt - now) / 1000;
-      setTime(clamp(remaining, 0, GAME_SECONDS));
-
-      if (remaining <= 0) {
-        stopGame();
-        return;
-      }
-      rafId = requestAnimationFrame(loop);
-    }
-
-    function startGame() {
-      if (running) return;
-      running = true;
-
-      score = 0; hits = 0; miss = 0;
-      setUI();
-
-      startBtn.disabled = true;
-      resetBtn.disabled = false;
-
-      endAt = performance.now() + GAME_SECONDS * 1000;
-      showTarget();
-      schedulePop();
-      loop();
-    }
-
-    function stopGame() {
-      running = false;
-      cancelAnimationFrame(rafId);
-      clearTimeout(popTimer);
-      hideTarget();
-
-      startBtn.disabled = false;
-      resetBtn.disabled = false;
-
-      alert(`終了！\nスコア: ${score}\n命中: ${hits}\nミス: ${miss}`);
-    }
-
-    function resetGame() {
-      running = false;
-      cancelAnimationFrame(rafId);
-      clearTimeout(popTimer);
-      hideTarget();
-
-      score = 0; hits = 0; miss = 0;
-      setUI();
-      setTime(GAME_SECONDS);
-
-      startBtn.disabled = false;
-      resetBtn.disabled = true;
-    }
-
-    // ターゲットをクリック
-    target.addEventListener("click", (e) => {
-      if (!running) return;
-      e.stopPropagation(); // 外側クリック判定に流さない
-      hits += 1;
-      score += 10;
-      setUI();
-      showTarget(); // クリックしたら即移動（気持ちよさ）
-    });
-
-    // 外側をクリック（ミス）
-    game.addEventListener("click", () => {
-      if (!running) return;
-      miss += 1;
-      score = Math.max(0, score - 3);
-      setUI();
-    });
-
-    startBtn.addEventListener("click", startGame);
-    resetBtn.addEventListener("click", resetGame);
-
-    // 初期表示
-    resetGame();
-  </script>
 </body>
 </html>
